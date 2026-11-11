@@ -1,0 +1,30 @@
+# Local-development overrides for the ParaBank stack.
+#
+# Compose loads this file automatically on top of `docker-compose.yml`,
+# so `docker compose up -d` gives you the local flavour. CI passes
+# `--file docker-compose.yml` explicitly to get the committed baseline
+# without these overrides.
+#
+# What changes locally:
+#   - the container is not restarted automatically, so a crashed stack
+#     stays crashed and is visible instead of silently coming back;
+#   - logs are capped, so a long local session cannot fill the disk;
+#   - the ports are published on the loopback interface only.
+#
+# `!override` is required: without it Compose MERGES the two `ports`
+# lists, and the result is two bindings for the same container port
+# (one per host IP), which Docker rejects - the container comes up with
+# no port published at all. `!override` replaces the base list instead.
+
+services:
+  parabank:
+    restart: "no"
+    ports: !override
+      - "127.0.0.1:${PARABANK_HTTP_PORT:-8080}:8080"
+      - "127.0.0.1:${PARABANK_DB_PORT:-9001}:9001"
+      - "127.0.0.1:${PARABANK_JMS_PORT:-61616}:61616"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

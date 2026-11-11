@@ -1,0 +1,243 @@
+name: ParaBank test suite
+
+# The suite is verified against the containerised ParaBank, never against
+# the shared public demo: the demo is rate-limited, it belongs to
+# everybody, and the mutating tests are not allowed to write to it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Both axes point at the containerised instance.
+  TEST_ENV: local
+  API_ENV: local
+  LOCAL_BASE_URL: http://localhost:8080/parabank
+  DB_JDBC_URL: jdbc:hsqldb:hsql://localhost:9001/parabank
+  DB_USER: sa
+  DB_PASSWORD: ''
+  DEMO_USERNAME: john
+  DEMO_PASSWORD: demo
+
+jobs:
+  typecheck:
+    name: TypeScript strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  ui:
+    name: UI suite
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - run: npm ci
+
+      - name: Install the browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start ParaBank
+        run: |
+          docker compose --file docker-compose.yml up --detach
+          # The health check opens the database and the web port; the
+          # application creates its schema on the first request it
+          # serves, so that request is what makes the instance usable.
+          for attempt in $(seq 1 60); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' parabank 2>/dev/null || echo starting)
+            if [ "$status" = "healthy" ]; then
+              break
+            fi
+            sleep 5
+          done
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null http://localhost:8080/parabank/index.htm; then
+              echo "ParaBank is serving requests."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ParaBank did not become ready in time."
+          docker compose --file docker-compose.yml logs
+          exit 1
+
+      - name: Run the UI suite
+        run: npm run test:ui
+
+      - name: Generate the Allure report
+        if: always()
+        continue-on-error: true
+        run: |
+          npm install --global allure-commandline
+          allure generate allure-results --clean --output allure-report
+
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-reports
+          path: |
+            allure-results/
+            allure-report/
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  api:
+    name: API suite (${{ matrix.transport }})
+    needs: typecheck
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The same test bodies run against every transport the service
+        # layer speaks.
+        transport: [soap, rest-json, rest-xml]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - run: npm ci
+
+      - name: Start ParaBank
+        run: |
+          docker compose --file docker-compose.yml up --detach
+          for attempt in $(seq 1 60); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' parabank 2>/dev/null || echo starting)
+            if [ "$status" = "healthy" ]; then
+              break
+            fi
+            sleep 5
+          done
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null http://localhost:8080/parabank/index.htm; then
+              echo "ParaBank is serving requests."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ParaBank did not become ready in time."
+          docker compose --file docker-compose.yml logs
+          exit 1
+
+      - name: Run the API suite
+        env:
+          API_TRANSPORT: ${{ matrix.transport }}
+        run: npm run test:api
+
+      - name: Generate the Allure report
+        if: always()
+        continue-on-error: true
+        run: |
+          npm install --global allure-commandline
+          allure generate allure-results --clean --output allure-report
+
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reports-${{ matrix.transport }}
+          path: |
+            allure-results/
+            allure-report/
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  db:
+    name: Database suite
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - run: npm ci
+
+      - name: Start ParaBank
+        run: |
+          docker compose --file docker-compose.yml up --detach
+          for attempt in $(seq 1 60); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' parabank 2>/dev/null || echo starting)
+            if [ "$status" = "healthy" ]; then
+              break
+            fi
+            sleep 5
+          done
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null http://localhost:8080/parabank/index.htm; then
+              echo "ParaBank is serving requests."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ParaBank did not become ready in time."
+          docker compose --file docker-compose.yml logs
+          exit 1
+
+      - name: Run the database suite
+        run: npm run test:db
+
+      - name: Generate the Allure report
+        if: always()
+        continue-on-error: true
+        run: |
+          npm install --global allure-commandline
+          allure generate allure-results --clean --output allure-report
+
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-reports
+          path: |
+            allure-results/
+            allure-report/
+            playwright-report/
+            test-results/
+          retention-days: 14

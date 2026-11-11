@@ -1,0 +1,57 @@
+name: parabank-test-stack
+
+# ParaBank, containerised for the test suite.
+#
+# The image is pinned by its OCI content digest rather than by tag: the
+# registry only publishes `latest`, `baseline` and `feature`, and all
+# three were republished on the same day, so a tag would silently drift
+# under the suite's feet. The digest always resolves to the same bits.
+#
+# The pinned digest is the `latest` build of 2026-09 (sha256:747453a0...).
+# The NEWER build that was current when this stack was first written
+# (sha256:8fa644bb..., published eight days ago) is rejected on purpose:
+# that build's embedded HSQLDB server refuses the handshake of its own
+# bundled client ("Network client is not a HSQLDB JDBC driver"), so the
+# application never initialises its schema - the seeded demo customer
+# does not exist and the database suite has nothing to read. Both builds
+# were verified against each other; see docs/DB-TESTING-GUIDE.md.
+#
+# Ports:
+#   8080  - the web application (UI suite + API suite)
+#   9001  - the embedded HSQLDB, in server mode (DB suite)
+#   61616 - the embedded JMS broker (JMS feature)
+#
+# Every host port is overridable through `.env` (see `.env.example`) so
+# the stack can run alongside anything else already bound on 8080.
+
+services:
+  parabank:
+    image: parasoft/parabank@sha256:747453a0c00b52ed36c7c55aa842a6e9e4a761f70ad577ec07b1f6cbee77e0e5
+    container_name: parabank
+    hostname: parabank
+    ports:
+      - "${PARABANK_HTTP_PORT:-8080}:8080"
+      - "${PARABANK_DB_PORT:-9001}:9001"
+      - "${PARABANK_JMS_PORT:-61616}:61616"
+    healthcheck:
+      # The image ships bash but neither curl nor wget, so the health
+      # check talks to the HSQLDB server socket with bash's /dev/tcp.
+      # The database is the last thing ParaBank opens, so a successful
+      # connection means the application has finished booting.
+      test:
+        - CMD-SHELL
+        - /bin/bash -c "exec 3<>/dev/tcp/127.0.0.1/9001 && exec 4<>/dev/tcp/127.0.0.1/8080"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - parabank
+    labels:
+      com.parabank.suite.role: application-under-test
+      com.parabank.suite.pinned-by: oci-content-digest
+
+networks:
+  parabank:
+    name: parabank-test-stack
