@@ -9,11 +9,15 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# Allure artefacts
+allure-results/
+allure-report/
+
 # Logs
 *.log
 npm-debug.log*
 
-# Environment
+# Environment - never commit real credentials
 .env
 .env.local
 
@@ -22,16 +26,16 @@ npm-debug.log*
 .idea/
 .DS_Store
 
-# Local-only Claude session settings
-.claude/
+# Claude Code - the agents, rules, skills and plans ARE part of the
+# repository; only the personal, per-machine settings file is not.
+.claude/settings.local.json
 
-# Local-only files generated during test authoring
+# Compiled JDBC helpers - regenerated on demand by src/db/client/db-client.ts
+src/db/client/jdbc/*.class
+
+# Saved browser sessions from manual exploration
 cookies.txt
+pbcookies.txt
 
-# Compiled JDBC helpers - regenerated via `javac`
-utils/db/*.class
-
-# Scratch Java probes used during schema exploration
-/utils/db/ListTables.java
-/utils/db/SampleData.java
-/utils/db/TypeMeaning.java
+# Scratch space used while investigating the running application
+.tmp-probe/

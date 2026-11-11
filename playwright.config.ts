@@ -1,44 +1,66 @@
 import { defineConfig, devices } from '@playwright/test';
+import { apiBaseURL, baseURL, dbAppBaseURL } from './src/shared/env';
+import { commonUse, forbidOnly, reporters, retries } from './src/shared/playwright.shared';
 
 /**
- * Playwright configuration for the ParaBank test suite.
- * - Tests are organised under `tests/` and use the Page Object Model under `pages/`.
- * - Most tests run serially because they share the demo user state from
- *   https://parabank.parasoft.com (the seed account data resets slowly).
+ * Unified root configuration.
+ *
+ * This file exists so the three suites can be run - and debugged - in
+ * one go, which is what the IDE's test explorer expects:
+ *
+ *     npx playwright test                       # all three suites
+ *     npx playwright test --project=ui          # one suite
+ *
+ * The individual suite configs (`playwright.ui.config.ts`,
+ * `playwright.api.config.ts`, `playwright.db.config.ts`) remain the
+ * canonical way to run a suite on its own - they carry the suite's own
+ * timeout, global setup and report directories. This file mirrors that
+ * setup as three projects.
  */
 export default defineConfig({
-  testDir: './tests',
-  globalSetup: './global-setup.ts',
   fullyParallel: false,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  forbidOnly,
+  retries,
   workers: 1,
-  reporter: [
-    ['list'],
-    ['html', { open: 'never', outputFolder: 'playwright-report' }],
-  ],
-  timeout: 120_000,
-  expect: {
-    timeout: 10_000,
-  },
+  reporter: reporters('ui'),
   /**
-   * Slow down slightly between tests to avoid tripping Cloudflare's
-   * rate limit on parasoft.com. Default is 0; set to ~750ms to stay
-   * safely below the threshold while still running quickly overall.
+   * The database readiness wait. It is a no-op unless the `db-*`
+   * features are enabled for the current environment, so running the
+   * unified config against the cloud demo does not insist on a
+   * database the suite is not going to use.
    */
-  reportSlowTests: { max: 5, threshold: 30_000 },
+  globalSetup: './src/db/global-setup.ts',
   use: {
-    baseURL: 'https://parabank.parasoft.com/parabank',
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
-    actionTimeout: 10_000,
-    navigationTimeout: 30_000,
+    ...commonUse,
   },
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'ui',
+      testDir: './tests-ui',
+      timeout: 120_000,
+      use: {
+        ...devices['Desktop Chrome'],
+        ...commonUse,
+        baseURL,
+      },
+    },
+    {
+      name: 'api',
+      testDir: './tests-api',
+      timeout: 60_000,
+      use: {
+        ...commonUse,
+        baseURL: apiBaseURL,
+      },
+    },
+    {
+      name: 'db',
+      testDir: './tests-db',
+      timeout: 120_000,
+      use: {
+        ...commonUse,
+        baseURL: dbAppBaseURL,
+      },
     },
   ],
 });
