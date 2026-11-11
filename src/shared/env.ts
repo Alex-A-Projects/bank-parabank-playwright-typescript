@@ -122,22 +122,45 @@ export const TEST_ENV: TestEnv = RAW_TEST_ENV;
 /** The server/API environment — API clients and API fixtures only. */
 export const API_ENV: TestEnv = RAW_API_ENV;
 
-/** Base URL of the public cloud demo. */
-export const CLOUD_BASE_URL = requireEnv('CLOUD_BASE_URL');
+/**
+ * The name of the variable that holds an environment's base URL.
+ *
+ * The two axes are independent, so a run may target the cloud demo, the
+ * local container, or both. Each environment's URL is therefore read
+ * only when that environment is actually the one being addressed.
+ */
+function baseUrlVariable(envName: TestEnv): 'CLOUD_BASE_URL' | 'LOCAL_BASE_URL' {
+  return envName === 'cloud' ? 'CLOUD_BASE_URL' : 'LOCAL_BASE_URL';
+}
 
-/** Base URL of the local ParaBank instance. */
-export const LOCAL_BASE_URL = requireEnv('LOCAL_BASE_URL');
+/**
+ * The base URL of an environment.
+ *
+ * The variable is read at the moment the environment is addressed, not
+ * at module load: a run that only ever talks to the local container
+ * must not be forced to configure the public demo's URL, and a run that
+ * only talks to the demo must not be forced to configure the local
+ * one. A variable that IS needed and is missing still fails loudly.
+ */
+export function baseUrlFor(envName: TestEnv): string {
+  return requireEnv(baseUrlVariable(envName)).replace(/\/+$/, '');
+}
 
-function resolveBaseUrl(envName: TestEnv): string {
-  const configured = envName === 'cloud' ? CLOUD_BASE_URL : LOCAL_BASE_URL;
-  return configured.replace(/\/+$/, '');
+/** The base URL of the public cloud demo. */
+export function cloudBaseUrl(): string {
+  return baseUrlFor('cloud');
+}
+
+/** The base URL of the local ParaBank instance. */
+export function localBaseUrl(): string {
+  return baseUrlFor('local');
 }
 
 /** Base URL the browser navigates to (driven by `TEST_ENV`). */
-export const baseURL = resolveBaseUrl(TEST_ENV);
+export const baseURL = baseUrlFor(TEST_ENV);
 
 /** Base URL the API clients call (driven by `API_ENV`). */
-export const apiBaseURL = resolveBaseUrl(API_ENV);
+export const apiBaseURL = baseUrlFor(API_ENV);
 
 // ---------------------------------------------------------------------------
 // Database
@@ -154,11 +177,17 @@ export const apiBaseURL = resolveBaseUrl(API_ENV);
  */
 export const dbConfig = {
   /** JDBC URL of the ParaBank HSQLDB instance. */
-  jdbcUrl: requireEnv('DB_JDBC_URL'),
+  get jdbcUrl(): string {
+    return requireEnv('DB_JDBC_URL');
+  },
   /** Database user. */
-  user: requireEnv('DB_USER'),
+  get user(): string {
+    return requireEnv('DB_USER');
+  },
   /** Database password. May be empty. */
-  password: requireEnv('DB_PASSWORD'),
+  get password(): string {
+    return requireEnv('DB_PASSWORD');
+  },
 } as const;
 
 /**
@@ -170,7 +199,7 @@ export const dbConfig = {
  * (`db-*` features are disabled for `cloud`), so a cloud run never
  * reaches this point.
  */
-export const dbAppBaseURL = resolveBaseUrl('local');
+export const dbAppBaseURL = baseUrlFor('local');
 
 // ---------------------------------------------------------------------------
 // Demo credentials
@@ -185,8 +214,12 @@ export const dbAppBaseURL = resolveBaseUrl('local');
  * used for the read-only scenarios.
  */
 export const demoCustomer = {
-  username: requireEnv('DEMO_USERNAME'),
-  password: requireEnv('DEMO_PASSWORD'),
+  get username(): string {
+    return requireEnv('DEMO_USERNAME');
+  },
+  get password(): string {
+    return requireEnv('DEMO_PASSWORD');
+  },
 } as const;
 
 export const env = {
@@ -198,16 +231,6 @@ export const env = {
   dbConfig,
   demoCustomer,
 } as const;
-
-/**
- * Resolves the base URL for an env name. Used by fixtures that need to
- * target an environment other than the ambient one (for example a test
- * that must run against the local container while the suite defaults to
- * the cloud demo).
- */
-export function baseUrlFor(envName: TestEnv): string {
-  return resolveBaseUrl(envName);
-}
 
 /**
  * True when the two axes point at different backends. Used by the

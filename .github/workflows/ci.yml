@@ -24,6 +24,12 @@ env:
   DB_PASSWORD: ''
   DEMO_USERNAME: john
   DEMO_PASSWORD: demo
+  # The public demo is never addressed by a CI run, so its URL is not
+  # needed - the suite reads an environment's URL only when that
+  # environment is the one being addressed. It is set here anyway so a
+  # misconfigured axis fails with a connection error rather than with a
+  # missing-variable error.
+  CLOUD_BASE_URL: https://parabank.parasoft.com/parabank
 
 jobs:
   typecheck:
